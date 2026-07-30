@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-chaintrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.docker}
+      POSTGRES_DB: ${POSTGRES_DB:-chaintrack}
+    ports:
+      - "${POSTGRES_PORT:-5488}:5432"
+    volumes:
+      - chaintrack_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-chaintrack}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  hardhat:
+    build: ./contract
+    ports:
+      - "8545:8545"
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-chaintrack}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chaintrack}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.docker}
+      ETH_RPC_URL: http://hardhat:8545
+      CONTRACT_ADDRESS: ${CONTRACT_ADDRESS:-}
+      PRIVATE_KEY: ${PRIVATE_KEY:-}
+      PORT: 5001
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@chaintrack.test}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env.docker}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+    ports:
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hardhat:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:5001}
+        VITE_CONTRACT_ADDRESS: ${CONTRACT_ADDRESS:-}
+        VITE_NETWORK: ${VITE_NETWORK:-localhost}
+        VITE_SITE_URL: ${VITE_SITE_URL:-http://localhost:3000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  chaintrack_pg_data:
